@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+
+	"github.com/jcr-byte/rudp-lab/internal/packet"
 )
 
 func main() {
@@ -28,7 +30,11 @@ func main() {
 			continue
 		}
 
-		data := string(buf[:n])
-		fmt.Println("got", data, "from", senderAddr)
+		data, err := packet.Decode(buf[:n])
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		fmt.Println("recieved", string(data.Payload), "from", senderAddr)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+
+	"github.com/jcr-byte/rudp-lab/internal/packet"
 )
 
 func main() {
@@ -20,7 +22,10 @@ func main() {
 	}
 	defer conn.Close()
 
-	n, err := conn.Write([]byte("Hello from sender"))
+	p := packet.Packet{Flag: 0xA5, Seq: 300, Checksum: 0xBEEF, Payload: []byte("hello")}
+	encoded := p.Encode()
+
+	n, err := conn.Write(encoded)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
