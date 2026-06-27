@@ -22,7 +22,7 @@ func TestRoundTrip(t *testing.T) {
 	if decoded.Seq != p.Seq {
 		t.Errorf("Seq: got %d, want %d", decoded.Seq, p.Seq)
 	}
-	
+
 	if decoded.Checksum != p.Checksum {
 		t.Errorf("Checksum: got %d, want %d", decoded.Checksum, p.Checksum)
 	}

@@ -6,6 +6,7 @@ import (
 )
 
 // Wire format (big-endian):
+//
 //	byte 0: Flag
 //	bytes 1-2: Seq (uint16)
 //	bytes 3-4: Checksum (uint16)
@@ -16,6 +17,11 @@ type Packet struct {
 	Checksum uint16
 	Payload  []byte
 }
+
+const (
+	FlagData byte = 1
+	FlagAck  byte = 2
+)
 
 func (packet *Packet) Encode() []byte {
 	buf := make([]byte, 5+len(packet.Payload))

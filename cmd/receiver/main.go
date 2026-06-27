@@ -35,6 +35,15 @@ func main() {
 			fmt.Println(err)
 			continue
 		}
-		fmt.Println("recieved", string(data.Payload), "from", senderAddr)
+		if data.Flag == packet.FlagData {
+			fmt.Println("recieved", string(data.Payload), "from", senderAddr)
+			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq, Checksum: 0}
+			n, err = conn.WriteToUDP(ackPacket.Encode(), senderAddr)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+		}
+
 	}
 }
