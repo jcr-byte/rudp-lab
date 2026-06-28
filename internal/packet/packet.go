@@ -23,7 +23,7 @@ const (
 	FlagAck  byte = 2
 )
 
-func Checksum(data []byte) uint16 {
+func CalculateChecksum(data []byte) uint16 {
 	var sum uint32
 	for _, b := range data {
 		sum += uint32(b)
@@ -31,12 +31,25 @@ func Checksum(data []byte) uint16 {
 	return uint16(sum + (sum >> 16))
 }
 
+func Verify(buf []byte) bool {
+	if len(buf) < 5 {
+		return false
+	}
+	stored := binary.BigEndian.Uint16(buf[3:5])
+	binary.BigEndian.PutUint16(buf[3:5], 0)
+	got := CalculateChecksum(buf)
+	binary.BigEndian.PutUint16(buf[3:5], stored)
+	return stored == got
+}
+
 func (packet *Packet) Encode() []byte {
 	buf := make([]byte, 5+len(packet.Payload))
 	buf[0] = packet.Flag
 	binary.BigEndian.PutUint16(buf[1:3], packet.Seq)
-	binary.BigEndian.PutUint16(buf[3:5], packet.Checksum)
+	binary.BigEndian.PutUint16(buf[3:5], 0)
 	copy(buf[5:], packet.Payload)
+	checksum := CalculateChecksum(buf)
+	binary.BigEndian.PutUint16(buf[3:5], checksum)
 	return buf
 }
 
