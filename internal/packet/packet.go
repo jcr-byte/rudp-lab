@@ -23,6 +23,14 @@ const (
 	FlagAck  byte = 2
 )
 
+func Checksum(data []byte) uint16 {
+	var sum uint32
+	for _, b := range data {
+		sum += uint32(b)
+	}
+	return uint16(sum + (sum >> 16))
+}
+
 func (packet *Packet) Encode() []byte {
 	buf := make([]byte, 5+len(packet.Payload))
 	buf[0] = packet.Flag

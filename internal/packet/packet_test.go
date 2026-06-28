@@ -31,3 +31,17 @@ func TestRoundTrip(t *testing.T) {
 		t.Errorf("Payload: got %q, want %q", decoded.Payload, p.Payload)
 	}
 }
+
+func TestChecksum(t *testing.T) {
+	data := []byte{0x01, 0x02, 0x03, 0x04}
+	checksum := packet.Checksum(data)
+	if checksum != 10 {
+		t.Errorf("Checksum: got %d, want 10", checksum)
+	}
+	data[0] = 0x02
+
+	checksum = packet.Checksum(data)
+	if checksum != 11 {
+		t.Errorf("Checksum: got %d, want 11", checksum)
+	}
+}
