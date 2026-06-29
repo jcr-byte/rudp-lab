@@ -22,11 +22,18 @@ func main() {
 	}
 	defer conn.Close()
 
+	var last uint16
+	haveDelivered := false
 	buf := make([]byte, 2048)
 	for {
 		n, senderAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			fmt.Println(err)
+			continue
+		}
+
+		if !packet.Verify(buf[:n]) {
+			fmt.Println("Recieved corrupted packet")
 			continue
 		}
 
@@ -36,7 +43,11 @@ func main() {
 			continue
 		}
 		if data.Flag == packet.FlagData {
-			fmt.Println("recieved", string(data.Payload), "from", senderAddr)
+			if !(haveDelivered && data.Seq == last) {
+				fmt.Println("recieved", string(data.Payload), "from", senderAddr)
+				last = data.Seq
+				haveDelivered = true
+			}
 			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq, Checksum: 0}
 			n, err = conn.WriteToUDP(ackPacket.Encode(), senderAddr)
 			if err != nil {

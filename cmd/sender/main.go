@@ -52,13 +52,19 @@ func main() {
 			fmt.Println("read failed:", err)
 			os.Exit(1)
 		}
+
+		if !packet.Verify(buf[:n]) {
+			fmt.Println("Recieved packet is corrupted")
+			continue
+		}
+
 		decodedPacket, err := packet.Decode(buf[:n])
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		if decodedPacket.Flag == packet.FlagAck {
-			fmt.Println("ack arrived and is valid")
+		if decodedPacket.Flag == packet.FlagAck && decodedPacket.Seq == p.Seq {
+			fmt.Println("Ack arrived and is valid")
 			break
 		}
 	}
