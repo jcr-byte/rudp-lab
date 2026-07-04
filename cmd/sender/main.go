@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/jcr-byte/rudp-lab/internal/packet"
+	"github.com/jcr-byte/rudp-lab/internal/packet/netsim"
 )
 
 const (
@@ -28,6 +29,9 @@ func main() {
 	}
 	defer conn.Close()
 
+	// declare lossy connection for simulation
+	lossyConn := netsim.NewLossyConn(conn, 0.50, 2)
+
 	data := []byte("hello world")
 	var currentSeq uint16 = 1
 	for offset := 0; offset < len(data); offset += maxPayload {
@@ -39,7 +43,7 @@ func main() {
 		buf := make([]byte, 2048)
 		acked := false
 		for attempt := 0; attempt < maxRetries; attempt++ {
-			_, err := conn.Write(encoded)
+			_, err := lossyConn.Write(encoded)
 			if err != nil {
 				log.Fatal(err)
 			}
