@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"time"
+	"log"
 
 	"github.com/jcr-byte/rudp-lab/internal/packet"
 )
@@ -13,59 +13,68 @@ import (
 const (
 	timeout    = 500 * time.Millisecond
 	maxRetries = 5
+	maxPayload = 5
 )
 
 func main() {
 	raddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:9000")
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	conn, err := net.DialUDP("udp", nil, raddr)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 	defer conn.Close()
 
-	p := packet.Packet{Flag: packet.FlagData, Seq: 300, Checksum: 0xBEEF, Payload: []byte("hello")}
-	encoded := p.Encode()
+	data := []byte("hello world")
+	var currentSeq uint16 = 1
+	for offset := 0; offset < len(data); offset += maxPayload {
 
-	buf := make([]byte, 2048)
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		_, err := conn.Write(encoded)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
+		end := min(offset+maxPayload, len(data))
+		p := packet.Packet{Flag: packet.FlagData, Seq: currentSeq, Checksum: 0xBEEF, Payload: data[offset:end]}
+		encoded := p.Encode()
 
-		conn.SetReadDeadline(time.Now().Add(timeout))
+		buf := make([]byte, 2048)
+		acked := false
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			_, err := conn.Write(encoded)
+			if err != nil {
+				log.Fatal(err)
+			}
 
-		n, err := conn.Read(buf)
-		if err != nil {
-			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Timeout() {
-				fmt.Println("no ack, retransmitting")
+			conn.SetReadDeadline(time.Now().Add(timeout))
+
+			n, err := conn.Read(buf)
+			if err != nil {
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Timeout() {
+					fmt.Println("no ack, retransmitting")
+					continue
+				}
+				log.Fatal("read failed", err)
+			}
+
+			if !packet.Verify(buf[:n]) {
+				fmt.Println("Recieved packet is corrupted")
 				continue
 			}
-			fmt.Println("read failed:", err)
-			os.Exit(1)
+
+			decodedPacket, err := packet.Decode(buf[:n])
+			if err != nil {
+				log.Fatal(err)
+			}
+			if decodedPacket.Flag == packet.FlagAck && decodedPacket.Seq == p.Seq {
+				fmt.Println("Ack arrived and is valid")
+				currentSeq++
+				acked = true
+				break
+			}
 		}
 
-		if !packet.Verify(buf[:n]) {
-			fmt.Println("Recieved packet is corrupted")
-			continue
-		}
-
-		decodedPacket, err := packet.Decode(buf[:n])
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		if decodedPacket.Flag == packet.FlagAck && decodedPacket.Seq == p.Seq {
-			fmt.Println("Ack arrived and is valid")
-			break
+		if !acked {
+			log.Fatalf("giving up on seq %d", p.Seq)
 		}
 	}
 }
