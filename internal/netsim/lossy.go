@@ -1,22 +1,22 @@
 package netsim
 
 import (
+	"fmt"
 	"math/rand"
 	"net"
-	"fmt"
 )
 
 type LossyConn struct {
 	conn *net.UDPConn
 	loss float64
-	rng *rand.Rand
+	rng  *rand.Rand
 }
 
 func NewLossyConn(conn *net.UDPConn, loss float64, seed int64) *LossyConn {
 	return &LossyConn{
 		conn: conn,
 		loss: loss,
-		rng: rand.New(rand.NewSource(seed)),
+		rng:  rand.New(rand.NewSource(seed)),
 	}
 }
 
