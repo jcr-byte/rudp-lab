@@ -28,3 +28,12 @@ func (connection *LossyConn) Write(bytes []byte) (int, error) {
 		return connection.conn.Write(bytes)
 	}
 }
+
+func (connection *LossyConn) WriteToUDP(bytes []byte, addr *net.UDPAddr) (int, error) {
+	if connection.rng.Float64() <= connection.loss {
+		fmt.Printf("DROP %d bytes\n", len(bytes))
+		return len(bytes), nil
+	} else {
+		return connection.conn.WriteToUDP(bytes, addr)
+	}
+}

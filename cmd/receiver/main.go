@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/jcr-byte/rudp-lab/internal/packet"
+	"github.com/jcr-byte/rudp-lab/internal/packet/netsim"
 )
 
 func main() {
@@ -20,6 +21,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	lossyConn := netsim.NewLossyConn(conn, 0.50, 2)
 	defer conn.Close()
 
 	var last uint16
@@ -49,7 +51,7 @@ func main() {
 				haveDelivered = true
 			}
 			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq, Checksum: 0}
-			n, err = conn.WriteToUDP(ackPacket.Encode(), senderAddr)
+			n, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
 			if err != nil {
 				fmt.Println(err)
 				continue
