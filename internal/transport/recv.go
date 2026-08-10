@@ -52,7 +52,7 @@ func Receive(cfg ReceiveConfig) error {
 				last = data.Seq
 				haveDelivered = true
 			}
-			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq, Checksum: 0}
+			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
 			n, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
 			if err != nil {
 				fmt.Println(err)

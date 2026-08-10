@@ -12,7 +12,7 @@ import (
 
 type SendConfig struct {
 	Addr    string
-	Msg     string
+	Payload []byte
 	Loss    float64
 	Seed    int64
 	Timeout time.Duration
@@ -22,7 +22,7 @@ type SendConfig struct {
 func DefaultSendConfig() SendConfig {
 	cfg := SendConfig{
 		Addr:    "127.0.0.1:9000",
-		Msg:     "hello world",
+		Payload: nil,
 		Loss:    0,
 		Seed:    2,
 		Timeout: 500 * time.Millisecond,
@@ -32,7 +32,7 @@ func DefaultSendConfig() SendConfig {
 	return cfg
 }
 
-const maxPayload = 50
+const maxPayload = 1024
 
 func Send(cfg SendConfig) error {
 	raddr, err := net.ResolveUDPAddr("udp", cfg.Addr)
@@ -49,12 +49,12 @@ func Send(cfg SendConfig) error {
 	// declare lossy connection for simulation
 	lossyConn := netsim.NewLossyConn(conn, cfg.Loss, cfg.Seed)
 
-	data := []byte(cfg.Msg)
+	data := cfg.Payload
 	var currentSeq uint16 = 1
 	for offset := 0; offset < len(data); offset += maxPayload {
 
 		end := min(offset+maxPayload, len(data))
-		p := packet.Packet{Flag: packet.FlagData, Seq: currentSeq, Checksum: 0xBEEF, Payload: data[offset:end]}
+		p := packet.Packet{Flag: packet.FlagData, Seq: currentSeq, Payload: data[offset:end]}
 		encoded := p.Encode()
 
 		buf := make([]byte, 2048)
