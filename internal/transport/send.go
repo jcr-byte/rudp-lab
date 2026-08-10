@@ -19,6 +19,19 @@ type SendConfig struct {
 	Retries int
 }
 
+func DefaultSendConfig() SendConfig {
+	cfg := SendConfig{
+		Addr:    "127.0.0.1:9000",
+		Msg:     "hello world",
+		Loss:    0,
+		Seed:    2,
+		Timeout: 500 * time.Millisecond,
+		Retries: 5,
+	}
+
+	return cfg
+}
+
 const maxPayload = 50
 
 func Send(cfg SendConfig) error {
