@@ -48,7 +48,7 @@ func Receive(cfg ReceiveConfig) error {
 		}
 		if data.Flag == packet.FlagData {
 			if !(haveDelivered && data.Seq == last) {
-				fmt.Println("received", string(data.Payload), "from", senderAddr)
+				fmt.Println("received payload of length", len(data.Payload), "from", senderAddr)
 				last = data.Seq
 				haveDelivered = true
 			}

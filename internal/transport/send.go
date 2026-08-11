@@ -98,5 +98,42 @@ func Send(cfg SendConfig) error {
 			return fmt.Errorf("giving up on seq %d", p.Seq)
 		}
 	}
+
+	buf := make([]byte, 2048)
+	finPacket := packet.Packet{Flag: packet.FlagFin, Seq: currentSeq}
+	finEncoded := finPacket.Encode()
+	for attempt := 0; attempt < cfg.Retries; attempt++ {
+		_, err := lossyConn.Write(finEncoded)
+		if err != nil {
+			return err
+		}
+
+		conn.SetReadDeadline(time.Now().Add(cfg.Timeout))
+
+		n, err := conn.Read(buf)
+		if err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				fmt.Println("no ack, retransmitting")
+				continue
+			}
+			return err
+		}
+
+		if !packet.Verify(buf[:n]) {
+			fmt.Println("Received packet is corrupted")
+			continue
+		}
+
+		decodedPacket, err := packet.Decode(buf[:n])
+		if err != nil {
+			return err
+		}
+		if decodedPacket.Flag == packet.FlagAck && decodedPacket.Seq == finPacket.Seq {
+			fmt.Println("Ack arrived and is valid")
+			break
+		}
+	}
+
 	return nil
 }

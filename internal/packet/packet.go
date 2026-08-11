@@ -21,6 +21,7 @@ type Packet struct {
 const (
 	FlagData byte = 1
 	FlagAck  byte = 2
+	FlagFin  byte = 3
 )
 
 func CalculateChecksum(data []byte) uint16 {
