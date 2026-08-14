@@ -73,13 +73,30 @@ func runReceive(args []string) error {
 	fs.Float64Var(&cfg.Loss, "loss", 0, "fraction of packets to drop, 0.0-1.0")
 	fs.Int64Var(&cfg.Seed, "seed", 2, "RNG seed for loss simulation")
 
+	file, err := os.Create("received.bin")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	cfg.Out = file
+
 	fs.Parse(args)
 
 	if cfg.Loss < 0.0 || cfg.Loss > 1.0 {
 		return fmt.Errorf("loss must be between 0 and 1. Got %v", cfg.Loss)
 	}
 
-	return transport.Receive(cfg)
+	if err := transport.Receive(cfg); err != nil {
+		return err
+	}
+
+	got, err := os.ReadFile("received.bin")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "received %d bytes, sha256=%x\n", len(got), sha256.Sum256(got))
+
+	return nil
 }
 
 func usage() {

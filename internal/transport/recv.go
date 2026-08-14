@@ -2,7 +2,9 @@ package transport
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"os"
 
 	"github.com/jcr-byte/rudp-lab/internal/netsim"
 	"github.com/jcr-byte/rudp-lab/internal/packet"
@@ -12,6 +14,7 @@ type ReceiveConfig struct {
 	Addr string
 	Loss float64
 	Seed int64
+	Out  io.Writer
 }
 
 func Receive(cfg ReceiveConfig) error {
@@ -37,31 +40,34 @@ func Receive(cfg ReceiveConfig) error {
 		}
 
 		if !packet.Verify(buf[:n]) {
-			fmt.Println("Received corrupted packet")
+			fmt.Fprintln(os.Stderr, "Received corrupted packet")
 			continue
 		}
 
 		data, err := packet.Decode(buf[:n])
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 			continue
 		}
 		if data.Flag == packet.FlagData {
 			if !(haveDelivered && data.Seq == last) {
-				fmt.Println("received payload of length", len(data.Payload), "from", senderAddr)
+				fmt.Fprintln(os.Stderr, "received payload of length", len(data.Payload), "from", senderAddr)
 				last = data.Seq
 				haveDelivered = true
+				if _, err := cfg.Out.Write(data.Payload); err != nil {
+					return err
+				}
 			}
 			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
 			n, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(os.Stderr, err)
 				continue
 			}
 		}
 
 		if data.Flag == packet.FlagFin {
-			fmt.Println("received fin packet from", senderAddr)
+			fmt.Fprintln(os.Stderr, "received fin packet from", senderAddr)
 
 			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
 			_, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
