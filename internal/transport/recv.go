@@ -59,5 +59,16 @@ func Receive(cfg ReceiveConfig) error {
 				continue
 			}
 		}
+
+		if data.Flag == packet.FlagFin {
+			fmt.Println("received fin packet from", senderAddr)
+
+			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
+			_, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
 	}
 }
