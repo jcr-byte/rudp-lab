@@ -11,10 +11,11 @@ import (
 )
 
 type ReceiveConfig struct {
-	Addr string
-	Loss float64
-	Seed int64
-	Out  io.Writer
+	Addr  string
+	Loss  float64
+	Seed  int64
+	Out   io.Writer
+	Ready chan<- net.Addr
 }
 
 func Receive(cfg ReceiveConfig) error {
@@ -27,6 +28,10 @@ func Receive(cfg ReceiveConfig) error {
 	if err != nil {
 		return err
 	}
+	if cfg.Ready != nil {
+		cfg.Ready <- conn.LocalAddr()
+	}
+
 	lossyConn := netsim.NewLossyConn(conn, cfg.Loss, cfg.Seed)
 	defer conn.Close()
 
@@ -74,6 +79,7 @@ func Receive(cfg ReceiveConfig) error {
 			if err != nil {
 				return err
 			}
+
 			return nil
 		}
 	}
