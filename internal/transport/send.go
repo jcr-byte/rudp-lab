@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/jcr-byte/rudp-lab/internal/netsim"
@@ -47,6 +48,7 @@ const maxPayload = 1024
 
 func Send(cfg SendConfig) (stats Stats, err error) {
 	start := time.Now()
+	var samples []time.Duration
 
 	raddr, err := net.ResolveUDPAddr("udp", cfg.Addr)
 	if err != nil {
@@ -67,9 +69,12 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	for offset := 0; offset < len(data); offset += maxPayload {
 		end := min(offset+maxPayload, len(data))
 		p := packet.Packet{Flag: packet.FlagData, Seq: currentSeq, Payload: data[offset:end]}
-		attempts, err := sendReliably(conn, lossyConn, cfg, p)
+		attempts, rtt, err := sendReliably(conn, lossyConn, cfg, p)
 		if err != nil {
 			return stats, err
+		}
+		if attempts == 1 {
+			samples = append(samples, rtt)
 		}
 		stats.Retransmissions += attempts - 1
 		stats.Packets++
@@ -77,7 +82,10 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	}
 
 	finPacket := packet.Packet{Flag: packet.FlagFin, Seq: currentSeq}
-	attempts, err := sendReliably(conn, lossyConn, cfg, finPacket)
+	attempts, rtt, err := sendReliably(conn, lossyConn, cfg, finPacket)
+	if err == nil && attempts == 1 {
+		samples = append(samples, rtt)
+	}
 	stats.Retransmissions += attempts - 1
 	stats.Packets++
 	if err != nil {
@@ -86,16 +94,26 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 
 	stats.Bytes = len(cfg.Payload)
 	stats.Elapsed = time.Since(start)
+	if len(samples) > 0 {
+		var sum time.Duration
+		for _, s := range samples {
+			sum += s
+		}
+		stats.RTTMean = sum / time.Duration(len(samples))
+		stats.RTTMin = slices.Min(samples)
+		stats.RTTMax = slices.Max(samples)
+	}
 	return stats, nil
 }
 
-func sendReliably(conn *net.UDPConn, lossyConn *netsim.LossyConn, cfg SendConfig, p packet.Packet) (attempts int, err error) {
+func sendReliably(conn *net.UDPConn, lossyConn *netsim.LossyConn, cfg SendConfig, p packet.Packet) (attempts int, rtt time.Duration, err error) {
 	buf := make([]byte, 2048)
 	encoded := p.Encode()
 	for attempt := 0; attempt < cfg.Retries; attempt++ {
+		t0 := time.Now()
 		_, err := lossyConn.Write(encoded)
 		if err != nil {
-			return attempt + 1, err
+			return attempt + 1, rtt, err
 		}
 
 		conn.SetReadDeadline(time.Now().Add(cfg.Timeout))
@@ -107,7 +125,7 @@ func sendReliably(conn *net.UDPConn, lossyConn *netsim.LossyConn, cfg SendConfig
 				fmt.Println("no ack, retransmitting")
 				continue
 			}
-			return attempt + 1, err
+			return attempt + 1, rtt, err
 		}
 
 		if !packet.Verify(buf[:n]) {
@@ -117,14 +135,15 @@ func sendReliably(conn *net.UDPConn, lossyConn *netsim.LossyConn, cfg SendConfig
 
 		decodedPacket, err := packet.Decode(buf[:n])
 		if err != nil {
-			return attempt + 1, err
+			return attempt + 1, rtt, err
 		}
 
 		if decodedPacket.Flag == packet.FlagAck && decodedPacket.Seq == p.Seq {
 			fmt.Println("Ack arrived and is valid")
-			return attempt + 1, err
+			rtt = time.Since(t0)
+			return attempt + 1, rtt, err
 		}
 	}
 
-	return cfg.Retries, fmt.Errorf("giving up on seq %d", p.Seq)
+	return cfg.Retries, rtt, fmt.Errorf("giving up on seq %d", p.Seq)
 }
