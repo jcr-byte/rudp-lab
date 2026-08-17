@@ -58,9 +58,15 @@ func runSend(args []string) error {
 	r := rand.New(rand.NewSource(0))
 	cfg.Payload = make([]byte, size)
 	r.Read(cfg.Payload)
-	fmt.Printf("sending %d bytes, sha256=%x\n", size, sha256.Sum256(cfg.Payload))
+	fmt.Fprintf(os.Stderr, "sending %d bytes, sha256=%x\n", size, sha256.Sum256(cfg.Payload))
 
-	return transport.Send(cfg)
+	stats, err := transport.Send(cfg)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "sent %d bytes in %v, %d packets, %d retransmissions\n", stats.Bytes, stats.Elapsed, stats.Packets, stats.Retransmissions)
+	return nil
 }
 
 func runReceive(args []string) error {

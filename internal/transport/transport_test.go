@@ -51,7 +51,8 @@ func TestSendReceive(t *testing.T) {
 			sendcfg.Payload = payload
 			sendcfg.Loss = c.loss
 
-			if err := transport.Send(sendcfg); err != nil {
+			_, err := transport.Send(sendcfg)
+			if err != nil {
 				t.Fatal("send failed:", err)
 			}
 
