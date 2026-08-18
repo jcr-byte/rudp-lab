@@ -67,6 +67,7 @@ func runSend(args []string) error {
 
 	fmt.Fprintf(os.Stderr, "sent %d bytes in %v, %d packets, %d retransmissions\n", stats.Bytes, stats.Elapsed, stats.Packets, stats.Retransmissions)
 	fmt.Fprintf(os.Stderr, "RTT Min: %v, RTT Max: %v, RTT Mean: %v\n", stats.RTTMin, stats.RTTMax, stats.RTTMean)
+	fmt.Fprintf(os.Stderr, "%.0f B/s goodput \n", stats.Goodput())
 	return nil
 }
 

@@ -21,16 +21,6 @@ type SendConfig struct {
 	Retries int
 }
 
-type Stats struct {
-	Elapsed         time.Duration
-	RTTMin          time.Duration
-	RTTMean         time.Duration
-	RTTMax          time.Duration
-	Packets         int
-	Retransmissions int
-	Bytes           int
-}
-
 func DefaultSendConfig() SendConfig {
 	cfg := SendConfig{
 		Addr:    "127.0.0.1:9000",
@@ -42,6 +32,20 @@ func DefaultSendConfig() SendConfig {
 	}
 
 	return cfg
+}
+
+type Stats struct {
+	Elapsed         time.Duration
+	RTTMin          time.Duration
+	RTTMean         time.Duration
+	RTTMax          time.Duration
+	Packets         int
+	Retransmissions int
+	Bytes           int
+}
+
+func (s Stats) Goodput() float64 {
+	return float64(s.Bytes) / s.Elapsed.Seconds()
 }
 
 const maxPayload = 1024

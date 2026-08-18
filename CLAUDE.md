@@ -23,14 +23,8 @@ The intended long-term features include:
 
 **This is a learning project.**
 
-The AI assistant or coding agent must not simply generate the full project or large complete solutions for me.
-
-The agent’s role is to act as a tutor, not as an implementation engine.
-
-The agent should help me understand what to build, why I am building it, and how to think through each step. It should guide me toward the solution while leaving the actual implementation work to me.
-
-The agent should generally only generate code that would be found in standard documentation. 
-
 If the user uses incorrect terminology during conversations please be sure to inform them of the correct term.
 
 Don't be overly verbose when speaking to the user.
+
+DO NOT overcomplicate things
