@@ -40,8 +40,7 @@ func Receive(cfg ReceiveConfig) error {
 	lossyConn := netsim.NewLossyConn(conn, cfg.Loss, cfg.Seed)
 	defer conn.Close()
 
-	var last uint16
-	haveDelivered := false
+	var nextExpectedSeq uint16 = 1
 	buf := make([]byte, 2048)
 
 	lingerFor := cfg.Linger
@@ -65,13 +64,12 @@ func Receive(cfg ReceiveConfig) error {
 			continue
 		}
 		if data.Flag == packet.FlagData {
-			if !(haveDelivered && data.Seq == last) {
+			if nextExpectedSeq == data.Seq {
 				fmt.Fprintln(os.Stderr, "received payload of length", len(data.Payload), "from", senderAddr)
-				last = data.Seq
-				haveDelivered = true
 				if _, err := cfg.Out.Write(data.Payload); err != nil {
 					return err
 				}
+				nextExpectedSeq++
 			}
 			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
 			n, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
