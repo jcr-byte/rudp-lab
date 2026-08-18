@@ -1,22 +1,27 @@
 package transport
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"time"
 
 	"github.com/jcr-byte/rudp-lab/internal/netsim"
 	"github.com/jcr-byte/rudp-lab/internal/packet"
 )
 
 type ReceiveConfig struct {
-	Addr  string
-	Loss  float64
-	Seed  int64
-	Out   io.Writer
-	Ready chan<- net.Addr
+	Addr   string
+	Loss   float64
+	Seed   int64
+	Out    io.Writer
+	Ready  chan<- net.Addr
+	Linger time.Duration
 }
+
+const defaultLinger = 2 * time.Second
 
 func Receive(cfg ReceiveConfig) error {
 	addr, err := net.ResolveUDPAddr("udp", cfg.Addr)
@@ -38,6 +43,11 @@ func Receive(cfg ReceiveConfig) error {
 	var last uint16
 	haveDelivered := false
 	buf := make([]byte, 2048)
+
+	lingerFor := cfg.Linger
+	if lingerFor <= 0 {
+		lingerFor = defaultLinger
+	}
 	for {
 		n, senderAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
@@ -80,7 +90,41 @@ func Receive(cfg ReceiveConfig) error {
 				return err
 			}
 
-			return nil
+			return linger(conn, lossyConn, data.Seq, lingerFor)
+		}
+	}
+}
+
+func linger(conn *net.UDPConn, lossyConn *netsim.LossyConn, finSeq uint16, lingerDuration time.Duration) error {
+	conn.SetReadDeadline(time.Now().Add(lingerDuration))
+	buf := make([]byte, 2048)
+	for {
+		n, senderAddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				return nil
+			}
+			return err
+		}
+
+		if !packet.Verify(buf[:n]) {
+			fmt.Fprintln(os.Stderr, "Received corrupted packet")
+			continue
+		}
+
+		p, err := packet.Decode(buf[:n])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			continue
+		}
+
+		if p.Flag == packet.FlagFin && p.Seq == finSeq {
+			fmt.Fprintln(os.Stderr, "duplicate fin, re-acking")
+			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: p.Seq}
+			if _, err := lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
 		}
 	}
 }

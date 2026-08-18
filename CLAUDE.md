@@ -32,3 +32,5 @@ The agent should help me understand what to build, why I am building it, and how
 The agent should generally only generate code that would be found in standard documentation. 
 
 If the user uses incorrect terminology during conversations please be sure to inform them of the correct term.
+
+Don't be overly verbose when speaking to the user.

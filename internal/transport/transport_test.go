@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/jcr-byte/rudp-lab/internal/transport"
 )
@@ -27,10 +28,11 @@ func TestSendReceive(t *testing.T) {
 			var buf bytes.Buffer
 
 			reccfg := transport.ReceiveConfig{
-				Addr:  "127.0.0.1:0",
-				Loss:  c.loss,
-				Out:   &buf,
-				Ready: ready,
+				Addr:   "127.0.0.1:0",
+				Loss:   c.loss,
+				Out:    &buf,
+				Ready:  ready,
+				Linger: 50 * time.Millisecond,
 			}
 
 			payload := make([]byte, c.size)
