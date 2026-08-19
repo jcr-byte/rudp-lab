@@ -57,6 +57,9 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 		return stats, fmt.Errorf("window size must be positive")
 	}
 
+	if cfg.Retries <= 0 {
+		return stats, fmt.Errorf("retries must be positive")
+	}
 	var samples []time.Duration
 
 	raddr, err := net.ResolveUDPAddr("udp", cfg.Addr)
@@ -91,6 +94,7 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	base := 0
 	nextIndex := base
 	deadline := time.Time{}
+	timeoutsWithoutProgress := 0
 	buf := make([]byte, 2048)
 	for base < len(packets) {
 		windowWasEmpty := base == nextIndex
@@ -119,6 +123,12 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 			var netErr net.Error
 
 			if errors.As(err, &netErr) && netErr.Timeout() {
+
+				timeoutsWithoutProgress++
+				if timeoutsWithoutProgress >= cfg.Retries {
+					return stats, fmt.Errorf("giving up on seq %d", packets[base].Seq)
+				}
+
 				for i := base; i < nextIndex; i++ {
 					if _, err := lossyConn.Write(packets[i].Encode()); err != nil {
 						return stats, err
@@ -150,6 +160,7 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 		newBase := int(ack.Seq) - 1
 		if newBase > base && newBase <= nextIndex {
 			base = newBase
+			timeoutsWithoutProgress = 0
 			if base < nextIndex {
 				deadline = time.Now().Add(cfg.Timeout)
 			}

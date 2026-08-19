@@ -3,6 +3,7 @@ package transport_test
 import (
 	"bytes"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,5 +67,42 @@ func TestSendReceive(t *testing.T) {
 				t.Errorf("mismatch: got %d bytes, want %d", buf.Len(), len(payload))
 			}
 		})
+	}
+}
+
+func TestSendGivesUpWithoutAck(t *testing.T) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			if _, _, err := conn.ReadFromUDP(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	cfg := transport.DefaultSendConfig()
+	cfg.Addr = conn.LocalAddr().String()
+	cfg.Payload = []byte("test payload")
+	cfg.Timeout = 10 * time.Millisecond
+	cfg.Retries = 3
+
+	_, err = transport.Send(cfg)
+	if err == nil {
+		t.Fatal("expected sender to give up, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "giving up on seq") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
