@@ -1,10 +1,8 @@
 package netsim
 
 import (
-	"fmt"
 	"math/rand"
 	"net"
-	"os"
 )
 
 type LossyConn struct {
@@ -23,7 +21,6 @@ func NewLossyConn(conn *net.UDPConn, loss float64, seed int64) *LossyConn {
 
 func (connection *LossyConn) Write(bytes []byte) (int, error) {
 	if connection.rng.Float64() <= connection.loss {
-		fmt.Fprintf(os.Stderr, "DROP %d bytes\n", len(bytes))
 		return len(bytes), nil
 	} else {
 		return connection.conn.Write(bytes)
@@ -32,7 +29,6 @@ func (connection *LossyConn) Write(bytes []byte) (int, error) {
 
 func (connection *LossyConn) WriteToUDP(bytes []byte, addr *net.UDPAddr) (int, error) {
 	if connection.rng.Float64() <= connection.loss {
-		fmt.Fprintf(os.Stderr, "DROP %d bytes\n", len(bytes))
 		return len(bytes), nil
 	} else {
 		return connection.conn.WriteToUDP(bytes, addr)
