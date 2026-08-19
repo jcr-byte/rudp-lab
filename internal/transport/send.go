@@ -90,8 +90,11 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 
 	base := 0
 	nextIndex := base
+	deadline := time.Time{}
 	buf := make([]byte, 2048)
 	for base < len(packets) {
+		windowWasEmpty := base == nextIndex
+
 		for nextIndex < len(packets) && nextIndex < base+cfg.WindowSize {
 			encoded := packets[nextIndex].Encode()
 
@@ -103,7 +106,11 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 			nextIndex++
 		}
 
-		if err := conn.SetReadDeadline(time.Now().Add(cfg.Timeout)); err != nil {
+		if windowWasEmpty && base < nextIndex {
+			deadline = time.Now().Add(cfg.Timeout)
+		}
+
+		if err := conn.SetReadDeadline(deadline); err != nil {
 			return stats, err
 		}
 
@@ -119,6 +126,8 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 
 					stats.Retransmissions++
 				}
+
+				deadline = time.Now().Add(cfg.Timeout)
 				continue
 			}
 
@@ -141,6 +150,9 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 		newBase := int(ack.Seq) - 1
 		if newBase > base && newBase <= nextIndex {
 			base = newBase
+			if base < nextIndex {
+				deadline = time.Now().Add(cfg.Timeout)
+			}
 		}
 
 	}
