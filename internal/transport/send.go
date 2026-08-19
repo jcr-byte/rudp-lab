@@ -126,14 +126,12 @@ func sendReliably(conn *net.UDPConn, lossyConn *netsim.LossyConn, cfg SendConfig
 		if err != nil {
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
-				fmt.Println("no ack, retransmitting")
 				continue
 			}
 			return attempt + 1, rtt, err
 		}
 
 		if !packet.Verify(buf[:n]) {
-			fmt.Println("Received packet is corrupted")
 			continue
 		}
 
@@ -143,7 +141,6 @@ func sendReliably(conn *net.UDPConn, lossyConn *netsim.LossyConn, cfg SendConfig
 		}
 
 		if decodedPacket.Flag == packet.FlagAck && decodedPacket.Seq == p.Seq {
-			fmt.Println("Ack arrived and is valid")
 			rtt = time.Since(t0)
 			return attempt + 1, rtt, err
 		}
