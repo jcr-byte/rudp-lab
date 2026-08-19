@@ -54,7 +54,6 @@ func Receive(cfg ReceiveConfig) error {
 		}
 
 		if !packet.Verify(buf[:n]) {
-			fmt.Fprintln(os.Stderr, "Received corrupted packet")
 			continue
 		}
 
@@ -65,7 +64,6 @@ func Receive(cfg ReceiveConfig) error {
 		}
 		if data.Flag == packet.FlagData {
 			if nextExpectedSeq == data.Seq {
-				fmt.Fprintln(os.Stderr, "received payload of length", len(data.Payload), "from", senderAddr)
 				if _, err := cfg.Out.Write(data.Payload); err != nil {
 					return err
 				}
@@ -80,7 +78,6 @@ func Receive(cfg ReceiveConfig) error {
 		}
 
 		if data.Flag == packet.FlagFin {
-			fmt.Fprintln(os.Stderr, "received fin packet from", senderAddr)
 
 			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
 			_, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
@@ -107,7 +104,6 @@ func linger(conn *net.UDPConn, lossyConn *netsim.LossyConn, finSeq uint16, linge
 		}
 
 		if !packet.Verify(buf[:n]) {
-			fmt.Fprintln(os.Stderr, "Received corrupted packet")
 			continue
 		}
 
@@ -118,7 +114,6 @@ func linger(conn *net.UDPConn, lossyConn *netsim.LossyConn, finSeq uint16, linge
 		}
 
 		if p.Flag == packet.FlagFin && p.Seq == finSeq {
-			fmt.Fprintln(os.Stderr, "duplicate fin, re-acking")
 			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: p.Seq}
 			if _, err := lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr); err != nil {
 				fmt.Fprintln(os.Stderr, err)

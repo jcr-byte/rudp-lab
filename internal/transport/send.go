@@ -51,7 +51,6 @@ func (s Stats) Goodput() float64 {
 const maxPayload = 1024
 
 func Send(cfg SendConfig) (stats Stats, err error) {
-	start := time.Now()
 	var samples []time.Duration
 
 	raddr, err := net.ResolveUDPAddr("udp", cfg.Addr)
@@ -70,6 +69,7 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 
 	data := cfg.Payload
 	var currentSeq uint16 = 1
+	start := time.Now()
 	for offset := 0; offset < len(data); offset += maxPayload {
 		end := min(offset+maxPayload, len(data))
 		p := packet.Packet{Flag: packet.FlagData, Seq: currentSeq, Payload: data[offset:end]}
@@ -92,12 +92,12 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	}
 	stats.Retransmissions += attempts - 1
 	stats.Packets++
+	stats.Elapsed = time.Since(start)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "warning: transfer complete but close unconfirmed:", err)
 	}
 
 	stats.Bytes = len(cfg.Payload)
-	stats.Elapsed = time.Since(start)
 	if len(samples) > 0 {
 		var sum time.Duration
 		for _, s := range samples {
