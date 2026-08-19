@@ -20,7 +20,7 @@ func NewLossyConn(conn *net.UDPConn, loss float64, seed int64) *LossyConn {
 }
 
 func (connection *LossyConn) Write(bytes []byte) (int, error) {
-	if connection.rng.Float64() <= connection.loss {
+	if connection.rng.Float64() < connection.loss {
 		return len(bytes), nil
 	} else {
 		return connection.conn.Write(bytes)
@@ -28,7 +28,7 @@ func (connection *LossyConn) Write(bytes []byte) (int, error) {
 }
 
 func (connection *LossyConn) WriteToUDP(bytes []byte, addr *net.UDPAddr) (int, error) {
-	if connection.rng.Float64() <= connection.loss {
+	if connection.rng.Float64() < connection.loss {
 		return len(bytes), nil
 	} else {
 		return connection.conn.WriteToUDP(bytes, addr)
