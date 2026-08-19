@@ -69,7 +69,7 @@ func Receive(cfg ReceiveConfig) error {
 				}
 				nextExpectedSeq++
 			}
-			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
+			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: nextExpectedSeq}
 			n, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -79,7 +79,7 @@ func Receive(cfg ReceiveConfig) error {
 
 		if data.Flag == packet.FlagFin {
 
-			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq}
+			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: data.Seq + 1}
 			_, err = lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr)
 			if err != nil {
 				return err
@@ -114,7 +114,7 @@ func linger(conn *net.UDPConn, lossyConn *netsim.LossyConn, finSeq uint16, linge
 		}
 
 		if p.Flag == packet.FlagFin && p.Seq == finSeq {
-			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: p.Seq}
+			ackPacket := packet.Packet{Flag: packet.FlagAck, Seq: p.Seq + 1}
 			if _, err := lossyConn.WriteToUDP(ackPacket.Encode(), senderAddr); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			}

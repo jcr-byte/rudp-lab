@@ -28,7 +28,6 @@ Record the environment once for each benchmark session.
 |---|---|
 | Date | 2026-08-19 |
 | Git commit | f5ac09f |
-| Uncommitted code change | Loss comparisons corrected from `<=` to `<` |
 | Protocol | Stop-and-wait |
 | Operating system | Windows 11 |
 | CPU | Intel Core i9 12900K |
@@ -40,7 +39,7 @@ Record the environment once for each benchmark session.
 
 ### Stop-and-wait baseline
 
-Add one row for every trial. Loss is the configured probability on each
+One row per every trial. Loss is the configured probability on each
 direction, not the combined probability that an entire data/ACK exchange fails.
 
 | Payload (bytes) | Loss | Sender seed | Receiver seed | Elapsed (ms) | Packets | Retransmissions | Mean RTT (ms) | Goodput (B/s) | Hash match | Result |
