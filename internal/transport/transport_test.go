@@ -423,5 +423,111 @@ func TestSendRetransmitsWindowOnTimeout(t *testing.T) {
 			want,
 		)
 	}
+}
+
+func TestReceiveDiscardsOutOfOrderPacket(t *testing.T) {
+	ready := make(chan net.Addr, 1)
+	errCh := make(chan error, 1)
+	var output bytes.Buffer
+
+	cfg := transport.ReceiveConfig{
+		Addr:   "127.0.0.1:0",
+		Out:    &output,
+		Ready:  ready,
+		Linger: 50 * time.Millisecond,
+	}
+
+	go func() {
+		errCh <- transport.Receive(cfg)
+	}()
+
+	var receiverAddr net.Addr
+	select {
+	case receiverAddr = <-ready:
+	case err := <-errCh:
+		t.Fatalf("receiver failed to start: %v", err)
+	}
+
+	udpAddr, err := net.ResolveUDPAddr("udp", receiverAddr.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	sendAndExpectAck := func(p packet.Packet, wantAck uint16) {
+		t.Helper()
+
+		if _, err := conn.Write(p.Encode()); err != nil {
+			t.Fatalf("sending seq %d: %v", p.Seq, err)
+		}
+
+		if err := conn.SetReadDeadline(
+			time.Now().Add(time.Second),
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		buf := make([]byte, 2048)
+		n, err := conn.Read(buf)
+		if err != nil {
+			t.Fatalf("reading ACK checksum for seq %d: %v", p.Seq, err)
+		}
+
+		if !packet.Verify(buf[:n]) {
+			t.Fatalf("invalid ACK checksum for seq %d", p.Seq)
+		}
+
+		ack, err := packet.Decode(buf[:n])
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if ack.Flag != packet.FlagAck || ack.Seq != wantAck {
+			t.Fatalf(
+				"after sending seq %d, got flag=%d ACK=%d, want ACK=%d",
+				p.Seq,
+				ack.Flag,
+				ack.Seq,
+				wantAck,
+			)
+		}
+	}
+
+	sendAndExpectAck(packet.Packet{
+		Flag:    packet.FlagData,
+		Seq:     2,
+		Payload: []byte("second"),
+	}, 1)
+
+	sendAndExpectAck(packet.Packet{
+		Flag:    packet.FlagData,
+		Seq:     1,
+		Payload: []byte("first"),
+	}, 2)
+
+	sendAndExpectAck(packet.Packet{
+		Flag:    packet.FlagData,
+		Seq:     2,
+		Payload: []byte("second"),
+	}, 3)
+
+	sendAndExpectAck(packet.Packet{
+		Flag: packet.FlagFin,
+		Seq:  3,
+	}, 4)
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("receiver failed: %v", err)
+	}
+
+	want := []byte("firstsecond")
+	if !bytes.Equal(output.Bytes(), want) {
+		t.Fatalf("received payload %q, want %q", output.Bytes(), want)
+	}
 
 }
