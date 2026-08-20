@@ -241,3 +241,187 @@ func TestSendFillsWindowBeforeAck(t *testing.T) {
 		)
 	}
 }
+
+func TestSendRetransmitsWindowOnTimeout(t *testing.T) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	type receiverResult struct {
+		firstWindow         []uint16
+		retransmittedWindow []uint16
+		err                 error
+	}
+
+	resultCh := make(chan receiverResult, 1)
+
+	go func() {
+		buf := make([]byte, 2048)
+		firstWindow := make([]uint16, 0, 4)
+
+		if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			resultCh <- receiverResult{err: err}
+			return
+		}
+
+		var senderAddr *net.UDPAddr
+
+		for len(firstWindow) < 4 {
+			n, addr, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				resultCh <- receiverResult{
+					firstWindow: firstWindow,
+					err:         fmt.Errorf("reading window: %w", err),
+				}
+				return
+			}
+
+			if !packet.Verify(buf[:n]) {
+				resultCh <- receiverResult{err: fmt.Errorf("invalid packet checksum")}
+				return
+			}
+
+			p, err := packet.Decode(buf[:n])
+			if err != nil {
+				resultCh <- receiverResult{err: err}
+				return
+			}
+
+			if p.Flag != packet.FlagData {
+				resultCh <- receiverResult{
+					err: fmt.Errorf("got packet flag %d, want data", p.Flag),
+				}
+				return
+			}
+
+			firstWindow = append(firstWindow, p.Seq)
+			senderAddr = addr
+		}
+
+		retransmittedWindow := make([]uint16, 0, 4)
+		for len(retransmittedWindow) < 4 {
+			n, addr, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				resultCh <- receiverResult{
+					retransmittedWindow: retransmittedWindow,
+					err:                 fmt.Errorf("reading window: %w", err),
+				}
+				return
+			}
+
+			if !packet.Verify(buf[:n]) {
+				resultCh <- receiverResult{err: fmt.Errorf("invalid packet checksum")}
+				return
+			}
+
+			p, err := packet.Decode(buf[:n])
+			if err != nil {
+				resultCh <- receiverResult{err: err}
+				return
+			}
+
+			if p.Flag != packet.FlagData {
+				resultCh <- receiverResult{
+					err: fmt.Errorf("got packet flag %d, want data", p.Flag),
+				}
+				return
+			}
+
+			retransmittedWindow = append(retransmittedWindow, p.Seq)
+			senderAddr = addr
+		}
+
+		ack := packet.Packet{
+			Flag: packet.FlagAck,
+			Seq:  5,
+		}
+		if _, err := conn.WriteToUDP(ack.Encode(), senderAddr); err != nil {
+			resultCh <- receiverResult{retransmittedWindow: retransmittedWindow, err: err}
+			return
+		}
+
+		n, senderAddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			resultCh <- receiverResult{
+				retransmittedWindow: retransmittedWindow,
+				err:                 fmt.Errorf("reading FIN: %w", err),
+			}
+			return
+		}
+
+		fin, err := packet.Decode(buf[:n])
+		if err != nil {
+			resultCh <- receiverResult{retransmittedWindow: retransmittedWindow, err: err}
+			return
+		}
+
+		if fin.Flag != packet.FlagFin || fin.Seq != 5 {
+			resultCh <- receiverResult{
+				retransmittedWindow: retransmittedWindow,
+				err:                 fmt.Errorf("got flag=%d seq=%d, want FIN seq=5", fin.Flag, fin.Seq),
+			}
+			return
+		}
+
+		finAck := packet.Packet{
+			Flag: packet.FlagAck,
+			Seq:  fin.Seq + 1,
+		}
+		if _, err := conn.WriteToUDP(finAck.Encode(), senderAddr); err != nil {
+			resultCh <- receiverResult{retransmittedWindow: retransmittedWindow, err: err}
+			return
+		}
+
+		resultCh <- receiverResult{
+			firstWindow:         firstWindow,
+			retransmittedWindow: retransmittedWindow,
+		}
+	}()
+
+	cfg := transport.DefaultSendConfig()
+	cfg.Addr = conn.LocalAddr().String()
+	cfg.Payload = make([]byte, 4*1024)
+	cfg.Timeout = 100 * time.Millisecond
+	cfg.Retries = 3
+	cfg.WindowSize = 4
+
+	stats, err := transport.Send(cfg)
+	if err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+
+	if stats.Retransmissions != 4 {
+		t.Fatalf("retransmissions = %d, want 4", stats.Retransmissions)
+	}
+
+	result := <-resultCh
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+
+	want := []uint16{1, 2, 3, 4}
+
+	if !slices.Equal(result.firstWindow, want) {
+		t.Fatalf(
+			"received first window sequences %v before ACK, want %v",
+			result.firstWindow,
+			want,
+		)
+	}
+
+	if !slices.Equal(result.retransmittedWindow, want) {
+		t.Fatalf(
+			"received retransmitted sequences %v before ACK, want %v",
+			result.retransmittedWindow,
+			want,
+		)
+	}
+
+}
