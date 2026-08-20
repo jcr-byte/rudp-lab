@@ -41,6 +41,7 @@ type Stats struct {
 	RTTMin          time.Duration
 	RTTMean         time.Duration
 	RTTMax          time.Duration
+	RTTSamples      int
 	Packets         int
 	Retransmissions int
 	Bytes           int
@@ -91,6 +92,8 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 		currentSeq++
 	}
 
+	sentAt := make([]time.Time, len(packets))
+	wasRetransmitted := make([]bool, len(packets))
 	base := 0
 	nextIndex := base
 	deadline := time.Time{}
@@ -101,6 +104,7 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 
 		for nextIndex < len(packets) && nextIndex < base+cfg.WindowSize {
 			encoded := packets[nextIndex].Encode()
+			sentAt[nextIndex] = time.Now()
 
 			if _, err := lossyConn.Write(encoded); err != nil {
 				return stats, err
@@ -130,6 +134,8 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 				}
 
 				for i := base; i < nextIndex; i++ {
+					wasRetransmitted[i] = true
+
 					if _, err := lossyConn.Write(packets[i].Encode()); err != nil {
 						return stats, err
 					}
@@ -159,24 +165,24 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 
 		newBase := int(ack.Seq) - 1
 		if newBase > base && newBase <= nextIndex {
+			ackedIndex := newBase - 1
+
+			if !wasRetransmitted[ackedIndex] {
+				samples = append(
+					samples,
+					time.Since(sentAt[ackedIndex]),
+				)
+			}
+
 			base = newBase
 			timeoutsWithoutProgress = 0
+
 			if base < nextIndex {
 				deadline = time.Now().Add(cfg.Timeout)
 			}
 		}
 
 	}
-
-	// attempts, rtt, err := sendReliably(conn, lossyConn, cfg, p)
-	// if err != nil {
-	// 	return stats, err
-	// }
-	// if attempts == 1 {
-	// 	samples = append(samples, rtt)
-	// }
-	// stats.Retransmissions += attempts - 1
-	// stats.Packets++
 
 	finPacket := packet.Packet{Flag: packet.FlagFin, Seq: currentSeq}
 	attempts, rtt, err := sendReliably(conn, lossyConn, cfg, finPacket)
@@ -191,10 +197,11 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	}
 
 	stats.Bytes = len(cfg.Payload)
+	stats.RTTSamples = len(samples)
 	if len(samples) > 0 {
 		var sum time.Duration
-		for _, s := range samples {
-			sum += s
+		for _, sample := range samples {
+			sum += sample
 		}
 		stats.RTTMean = sum / time.Duration(len(samples))
 		stats.RTTMin = slices.Min(samples)

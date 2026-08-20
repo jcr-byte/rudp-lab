@@ -15,14 +15,16 @@ import (
 
 func TestSendReceive(t *testing.T) {
 	cases := []struct {
-		name string
-		size int
-		loss float64
+		name   string
+		size   int
+		loss   float64
+		window int
 	}{
-		{"clean", 5000, 0},
-		{"loss", 5000, 0.1},
-		{"tiny", 1, 0},
-		{"exact_chunk", 1024, 0},
+		{"clean", 5000, 0, 4},
+		{"loss", 5000, 0.1, 4},
+		{"tiny", 1, 0, 4},
+		{"exact_chunk", 1024, 0, 4},
+		{"window_one", 5000, 0, 1},
 	}
 
 	for _, c := range cases {
@@ -56,6 +58,7 @@ func TestSendReceive(t *testing.T) {
 			sendcfg.Addr = addr.String()
 			sendcfg.Payload = payload
 			sendcfg.Loss = c.loss
+			sendcfg.WindowSize = c.window
 
 			_, err := transport.Send(sendcfg)
 			if err != nil {
@@ -223,8 +226,13 @@ func TestSendFillsWindowBeforeAck(t *testing.T) {
 	cfg.Retries = 3
 	cfg.WindowSize = 4
 
-	if _, err = transport.Send(cfg); err != nil {
+	stats, err := transport.Send(cfg)
+	if err != nil {
 		t.Fatalf("send failed: %v", err)
+	}
+
+	if stats.RTTSamples != 2 {
+		t.Fatalf("RTT samples = %d, want 2", stats.RTTSamples)
 	}
 
 	result := <-resultCh
@@ -399,6 +407,10 @@ func TestSendRetransmitsWindowOnTimeout(t *testing.T) {
 
 	if stats.Retransmissions != 4 {
 		t.Fatalf("retransmissions = %d, want 4", stats.Retransmissions)
+	}
+
+	if stats.RTTSamples != 1 {
+		t.Fatalf("RTT samples = %d, want 1", stats.RTTSamples)
 	}
 
 	result := <-resultCh

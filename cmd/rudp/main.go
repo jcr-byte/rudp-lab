@@ -45,6 +45,7 @@ func runSend(args []string) error {
 	fs.Float64Var(&cfg.Loss, "loss", cfg.Loss, "fraction of packets to drop, 0.0-1.0")
 	fs.Int64Var(&cfg.Seed, "seed", cfg.Seed, "RNG seed for reproducible loss simulation")
 	fs.IntVar(&size, "size", 15000, "size of payload to send")
+	fs.IntVar(&cfg.WindowSize, "window", cfg.WindowSize, "maximum number of unacknowledged packets")
 
 	fs.Parse(args)
 
@@ -67,7 +68,18 @@ func runSend(args []string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "sent %d bytes in %v, %d packets, %d retransmissions\n", stats.Bytes, stats.Elapsed, stats.Packets, stats.Retransmissions)
-	fmt.Fprintf(os.Stderr, "RTT Min: %v, RTT Max: %v, RTT Mean: %v\n", stats.RTTMin, stats.RTTMax, stats.RTTMean)
+	if stats.RTTSamples > 0 {
+		fmt.Fprintf(
+			os.Stderr,
+			"RTT Min: %v, RTT Max: %v, RTT Mean: %v, Samples: %d\n",
+			stats.RTTMin,
+			stats.RTTMax,
+			stats.RTTMean,
+			stats.RTTSamples,
+		)
+	} else {
+		fmt.Fprintln(os.Stderr, "RTT: unavailable (no valid samples)")
+	}
 	fmt.Fprintf(os.Stderr, "%.0f B/s goodput \n", stats.Goodput())
 	return nil
 }
