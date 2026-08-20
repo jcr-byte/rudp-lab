@@ -2,11 +2,14 @@ package transport_test
 
 import (
 	"bytes"
+	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jcr-byte/rudp-lab/internal/packet"
 	"github.com/jcr-byte/rudp-lab/internal/transport"
 )
 
@@ -104,5 +107,137 @@ func TestSendGivesUpWithoutAck(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "giving up on seq") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSendFillsWindowBeforeAck(t *testing.T) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	type receiverResult struct {
+		sequences []uint16
+		err       error
+	}
+
+	resultCh := make(chan receiverResult, 1)
+
+	go func() {
+		buf := make([]byte, 2048)
+		sequences := make([]uint16, 0, 4)
+
+		if err := conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+			resultCh <- receiverResult{err: err}
+			return
+		}
+
+		var senderAddr *net.UDPAddr
+
+		for len(sequences) < 4 {
+			n, addr, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				resultCh <- receiverResult{
+					sequences: sequences,
+					err:       fmt.Errorf("reading window: %w", err),
+				}
+				return
+			}
+
+			if !packet.Verify(buf[:n]) {
+				resultCh <- receiverResult{err: fmt.Errorf("invalid packet checksum")}
+				return
+			}
+
+			p, err := packet.Decode(buf[:n])
+			if err != nil {
+				resultCh <- receiverResult{err: err}
+				return
+			}
+
+			if p.Flag != packet.FlagData {
+				resultCh <- receiverResult{
+					err: fmt.Errorf("got packet flag %d, want data", p.Flag),
+				}
+				return
+			}
+
+			sequences = append(sequences, p.Seq)
+			senderAddr = addr
+		}
+
+		ack := packet.Packet{
+			Flag: packet.FlagAck,
+			Seq:  5,
+		}
+		if _, err := conn.WriteToUDP(ack.Encode(), senderAddr); err != nil {
+			resultCh <- receiverResult{sequences: sequences, err: err}
+			return
+		}
+
+		n, senderAddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			resultCh <- receiverResult{
+				sequences: sequences,
+				err:       fmt.Errorf("reading FIN: %w", err),
+			}
+			return
+		}
+
+		fin, err := packet.Decode(buf[:n])
+		if err != nil {
+			resultCh <- receiverResult{sequences: sequences, err: err}
+			return
+		}
+
+		if fin.Flag != packet.FlagFin || fin.Seq != 5 {
+			resultCh <- receiverResult{
+				sequences: sequences,
+				err:       fmt.Errorf("got flag=%d seq=%d, want FIN seq=5", fin.Flag, fin.Seq),
+			}
+			return
+		}
+
+		finAck := packet.Packet{
+			Flag: packet.FlagAck,
+			Seq:  fin.Seq + 1,
+		}
+		if _, err := conn.WriteToUDP(finAck.Encode(), senderAddr); err != nil {
+			resultCh <- receiverResult{sequences: sequences, err: err}
+			return
+		}
+
+		resultCh <- receiverResult{sequences: sequences}
+	}()
+
+	cfg := transport.DefaultSendConfig()
+	cfg.Addr = conn.LocalAddr().String()
+	cfg.Payload = make([]byte, 4*1024)
+	cfg.Timeout = time.Second
+	cfg.Retries = 3
+	cfg.WindowSize = 4
+
+	if _, err = transport.Send(cfg); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+
+	result := <-resultCh
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+
+	want := []uint16{1, 2, 3, 4}
+	if !slices.Equal(result.sequences, want) {
+		t.Fatalf(
+			"received sequences %v before ACK, want %v",
+			result.sequences,
+			want,
+		)
 	}
 }
