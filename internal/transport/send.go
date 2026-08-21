@@ -193,7 +193,7 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	stats.Packets++
 	stats.Elapsed = time.Since(start)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "warning: transfer complete but close unconfirmed:", err)
+		return stats, fmt.Errorf("warning: transfer complete but close unconfirmed:", err)
 	}
 
 	stats.Bytes = len(cfg.Payload)
