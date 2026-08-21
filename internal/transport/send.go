@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"slices"
 	"time"
 
@@ -193,7 +192,7 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	stats.Packets++
 	stats.Elapsed = time.Since(start)
 	if err != nil {
-		return stats, fmt.Errorf("warning: transfer complete but close unconfirmed:", err)
+		return stats, fmt.Errorf("transfer complete but close unconfirmed: %w", err)
 	}
 
 	stats.Bytes = len(cfg.Payload)
