@@ -44,6 +44,8 @@ func runSend(args []string) error {
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "address to send to, as host:port")
 	fs.Float64Var(&cfg.Loss, "loss", cfg.Loss, "fraction of packets to drop, 0.0-1.0")
 	fs.Int64Var(&cfg.Seed, "seed", cfg.Seed, "RNG seed for reproducible loss simulation")
+	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "retransmission timeout")
+	fs.IntVar(&cfg.Retries, "retries", cfg.Retries, "maximum attempts without progress")
 	fs.IntVar(&size, "size", 15000, "size of payload to send")
 	fs.IntVar(&cfg.WindowSize, "window", cfg.WindowSize, "maximum number of unacknowledged packets")
 
