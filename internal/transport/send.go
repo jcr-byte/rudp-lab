@@ -80,9 +80,6 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	data := cfg.Payload
 	var currentSeq uint16 = 1
 
-	// start timer for RTT stats
-	start := time.Now()
-
 	// chunk data into maxPayload size packets and add to packets slice
 	packets := make([]packet.Packet, 0, (len(data)+maxPayload-1)/maxPayload)
 	for offset := 0; offset < len(data); offset += maxPayload {
@@ -99,6 +96,9 @@ func Send(cfg SendConfig) (stats Stats, err error) {
 	deadline := time.Time{}
 	timeoutsWithoutProgress := 0
 	buf := make([]byte, 2048)
+
+	// start timer for RTT stats
+	start := time.Now()
 	for base < len(packets) {
 		windowWasEmpty := base == nextIndex
 
