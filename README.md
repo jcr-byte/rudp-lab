@@ -6,6 +6,275 @@ cumulative acknowledgments, checksums, timeout-based retransmission, and
 simulated packet loss. Setting the window size to 1 provides stop-and-wait
 behavior for comparison.
 
+## Project goals
+
+I built RUDP Lab to better understand how reliable transport protocols provide ordered and dependable data delivery over an unreliable network. By implementing reliability on top of UDP, I was able to explore sequence numbers,
+acknowledgments, checksums, retransmission timeouts, sliding windows, and packet-loss recovery without relying on TCP to handle those concerns automatically.
+
+This project also served as an introduction to Go. It gave me experience working with Go’s networking APIs, binary data encoding, error handling, testing, and concurrent sender-receiver behavior. RUDP Lab is an educational
+protocol rather than a production-ready replacement for TCP. The projects purpose is to explore the concepts and engineering tradeoffs involved in reliable transport.
+
+## Highlights
+
+- Designed a custom binary packet format with sequence numbers, packet-type flags, checksums, and payload data
+- Implemented Go-Back-N transmission using a configurable sliding window and cumulative acknowledgments
+- Supported stop-and-wait behavior through a window size of one
+- Added timeout-based retransmission and retry limits to recover from lost data packets and acknowledgments
+- Built a reproducible packet-loss simulator using configurable loss rates and random seeds
+- Implemented transfer completion using a FIN/ACK packet
+- Collected goodput, retransmission, completion-time, and RTT statistics while applying Karn’s algorithm to RTT sampling
+- Created unit and integration tests covering packet validation, lossy transfers, out-of-order packets, window retransmission, and retry exhaustion
+- Benchmarked stop-and-wait against Go-Back-N, observing approximately 2.02×–2.66× higher aggregate goodput with a window size of four
+
+## How it works
+
+RUDP Lab transfers data between a sender and receiver using UDP datagrams. The sender divides the input into payloads of up to 1,024 bytes, assigns each packet a sequence number, calculates a checksum, and transmits packets within a
+configurable sliding window.
+
+The receiver validates each packet’s checksum and accepts it only if its sequence number matches the next expected sequence number. It then responds with a cumulative acknowledgment indicating the next packet it expects. Duplicate and
+out-of-order packets are discarded but still trigger an acknowledgment of the current expected sequence number.
+
+As acknowledgments arrive, the sender advances its window and transmits additional packets. If the sender does not receive an acknowledgment before the retransmission timeout, it resends every unacknowledged packet in the current
+window. After all data is acknowledged, a FIN/ACK exchange completes the transfer.
+
+### Packet format
+
+Each packet contains a fixed 5-byte header followed by an optional payload.
+Multibyte fields are encoded in big-endian byte order.
+
+| Field | Size | Purpose |
+|---|---:|---|
+| Flag | 1 byte | Identifies the packet as DATA (`1`), ACK (`2`), or FIN (`3`) |
+| Sequence number | 2 bytes | Orders DATA packets or indicates the next expected sequence number in an ACK |
+| Checksum | 2 bytes | Detects accidental corruption in the header or payload |
+| Payload | 0-1,024 bytes | Contains application data for DATA packets |
+
+The checksum is calculated across the entire encoded packet while the checksum
+field is set to zero. The receiver repeats this calculation and discards the
+packet if the result does not match the stored checksum. ACK and FIN packets
+use the same header format but do not contain payload data.
+
+### Sequence numbers and acknowledgments
+
+Each DATA packet is assigned a sequence number beginning at `1`. The receiver
+tracks the next sequence number it expects and accepts only packets that arrive
+in order. When a packet is accepted, its payload is written to the output and
+the expected sequence number is incremented.
+
+Acknowledgments are cumulative: the ACK sequence number identifies the next
+DATA packet the receiver expects. For example, an ACK with sequence number `5`
+confirms that all packets through sequence number `4` were received in order.
+
+Duplicate and out-of-order packets are discarded. However, the receiver still
+sends an ACK containing its current expected sequence number. This informs the
+sender of the last point at which the transfer was complete and allows lost
+data packets or acknowledgments to be recovered through retransmission.
+
+### Go-Back-N sliding window
+
+The sender uses a configurable Go-Back-N sliding window to keep multiple DATA
+packets in flight without waiting for an individual ACK after every packet.
+The window begins at the oldest unacknowledged packet and limits how many
+packets may be outstanding at one time.
+
+When a cumulative ACK arrives, the sender marks every earlier packet as
+acknowledged, advances the beginning of the window, and transmits new packets
+to fill the available space. This reduces the time spent waiting between
+packets and improves goodput compared with stop-and-wait transmission.
+
+If an ACK does not arrive before the retransmission timeout, the sender goes
+back to the oldest unacknowledged packet and retransmits every outstanding
+packet in the current window. Setting the window size to `1` uses the same
+implementation but produces stop-and-wait behavior, providing a controlled
+baseline for comparison.
+
+### Timeouts and retransmission
+
+The sender starts a configurable retransmission timer when packets are placed
+in an empty window. Each cumulative ACK that advances the window represents
+forward progress and resets the timer for the remaining outstanding packets.
+
+If the timer expires before the sender receives an ACK that advances the
+window, every unacknowledged packet in the current window is retransmitted.
+The sender also tracks consecutive timeouts without progress and ends the
+transfer with an error when the configured retry limit is reached. This
+prevents it from retransmitting indefinitely when the receiver is unavailable
+or packet loss remains too high.
+
+RUDP Lab records round-trip time (RTT) samples for packets acknowledged without
+retransmission. Samples from retransmitted packets are excluded according to
+Karn's algorithm because the sender cannot determine whether the ACK
+corresponds to the original transmission or a later attempt.
+
+### Transfer completion
+
+After every DATA packet has been acknowledged, the sender transmits a FIN
+packet using the next sequence number. The receiver responds with an ACK for
+the following sequence number, confirming that it received the FIN. If the
+sender does not receive this ACK before the timeout, it retransmits the FIN up
+to the configured retry limit.
+
+After sending the final ACK, the receiver remains available for a short linger
+period instead of closing its UDP socket immediately. If the final ACK was lost
+and the sender retransmits the same FIN, the receiver can acknowledge it again.
+The transfer ends once the sender receives the FIN acknowledgment and the
+receiver's linger period expires.
+
+## Loss simulation
+
+RUDP Lab includes a configurable loss simulator for testing reliability under
+unreliable network conditions. Before each outgoing UDP datagram is sent, the
+simulator uses the configured loss rate to decide whether to drop it.
+A dropped datagram is reported to the protocol as successfully written, which
+reproduces the lack of delivery feedback normally provided by UDP.
+
+Loss is applied independently to outgoing DATA and FIN packets on the sender
+and outgoing ACK packets on the receiver. Each side accepts its own random seed,
+allowing the same loss pattern to be reproduced across test and benchmark runs.
+
+The simulator currently models packet loss only. It does not introduce delay,
+corruption, duplication, or packet reordering.
+
+## Project structure
+
+```text
+cmd/rudp/
+  main.go                  Command-line sender and receiver
+internal/packet/
+  packet.go                Packet format, encoding, decoding, and checksums
+  packet_test.go           Packet and checksum unit tests
+internal/transport/
+  send.go                  Go-Back-N sender and transfer metrics
+  recv.go                  Receiver, cumulative ACKs, and FIN handling
+  transport_test.go        End-to-end and transport behavior tests
+internal/netsim/
+  lossy.go                 Seeded packet-loss simulation
+go.mod                     Go module definition
+README.md                  Project documentation and benchmark results
+```
+
+The command-line application is kept separate from the protocol packages. The
+`packet` package defines the wire format, `transport` implements reliable data
+delivery, and `netsim` provides controlled packet loss for testing and
+benchmarking.
+
+## Getting started
+
+### Requirements
+
+- Go 1.26.4, as declared in `go.mod`
+- Two terminal sessions for running the sender and receiver locally
+
+Clone the repository and enter the project directory:
+
+```powershell
+git clone https://github.com/jcr-byte/rudp-lab.git
+cd rudp-lab
+```
+
+### Run the receiver
+
+Start the receiver first. By default, it listens on UDP port `9000` and writes
+the completed transfer to `received.bin` in the current directory.
+
+```powershell
+go run ./cmd/rudp recv -addr :9000
+```
+
+The `-addr` flag can be changed to listen on a different local address or port.
+Run `go run ./cmd/rudp recv -h` to view all receiver options.
+
+### Run the sender
+
+In a second terminal, send a 100,000-byte payload to the receiver with a
+four-packet window:
+
+```powershell
+go run ./cmd/rudp send -addr 127.0.0.1:9000 -size 100000 -window 4
+```
+
+The sender generates a deterministic random payload of the requested size and
+prints transfer statistics after completion, including elapsed time, packet
+count, retransmissions, RTT measurements, and goodput. The sender and receiver
+also print SHA-256 hashes that can be compared to verify that the received data
+matches the original payload.
+
+Run `go run ./cmd/rudp send -h` to view options for the payload size, window
+size, retransmission timeout, retry limit, loss rate, and random seed.
+
+### Simulate packet loss
+
+Packet loss can be enabled independently on both sides. Start the receiver with
+a 5% ACK loss rate and an explicit seed:
+
+```powershell
+go run ./cmd/rudp recv -addr :9000 -loss 0.05 -seed 101
+```
+
+Then run the sender with a 5% DATA/FIN loss rate and its own seed:
+
+```powershell
+go run ./cmd/rudp send -addr 127.0.0.1:9000 -size 100000 -window 4 -loss 0.05 -seed 1
+```
+
+Using the same configuration and seeds reproduces the same simulated loss
+decisions, making failures and performance experiments easier to investigate.
+
+## Testing
+
+Run the complete unit and integration test suite from the repository root:
+
+```powershell
+go test ./...
+```
+
+The packet tests verify checksum calculation, corruption detection, and
+encoding/decoding round trips. The transport tests exercise:
+
+- End-to-end transfers with and without simulated packet loss
+- One-byte payloads, exact 1,024-byte chunks, and multi-packet payloads
+- Stop-and-wait operation with a window size of `1`
+- Filling a sliding window before receiving an ACK
+- Retransmitting the outstanding window after a timeout
+- Stopping after the retry limit when no ACK is received
+- Discarding out-of-order packets while returning the expected cumulative ACK
+
+End-to-end tests compare the received bytes with the original payload rather
+than checking only whether the sender and receiver exited successfully.
+
+## Design decisions and tradeoffs
+
+### Go-Back-N over Selective Repeat
+
+Go-Back-N was chosen as the first sliding-window protocol because it adds
+pipelining while keeping the sender and receiver state manageable. The
+receiver only tracks the next expected sequence number, and the sender can
+recover from loss by retransmitting the outstanding window. The tradeoff is
+that packets received correctly after a missing packet must be sent again,
+using more bandwidth than Selective Repeat under loss.
+
+The window size is configurable, and setting it to `1` produces stop-and-wait
+behavior through the same implementation. This made it possible to compare the
+two transmission strategies without maintaining separate protocol paths.
+
+### Cumulative ACKs and out-of-order packets
+
+ACKs report the next sequence number expected by the receiver, confirming all
+earlier packets at once. This reduces acknowledgment state and allows a single
+ACK to advance the sender past multiple packets. To preserve that simplicity,
+the receiver discards out-of-order packets instead of buffering them. This
+keeps memory use and receiver logic small but may cause additional
+retransmissions.
+
+### Fixed retransmission timeout
+
+The sender uses a configurable fixed timeout rather than dynamically adapting
+it to measured RTT. A fixed value makes the retransmission behavior easier to
+reason about and keeps benchmark configurations reproducible. However, a value
+that is too short can cause unnecessary retransmissions, while one that is too
+long delays recovery. A production transport protocol would normally estimate
+an adaptive retransmission timeout as network conditions change.
+
 ## Benchmarks
 
 ### Measurement notes
@@ -211,3 +480,46 @@ are counted separately and are not replaced with new seeds.
 | dc90f77 | 1 | 1000000 | 0 | 5 | 0 | 29.1489 | 0 | 34329012 |
 | dc90f77 | 1 | 1000000 | 0.05 | 5 | 0 | 11589.6338 | 112.2 | 88441 |
 | dc90f77 | 1 | 1000000 | 0.1 | 3 | 2 | 22432.4444 | 225.33 | 44109 |
+
+## AI usage
+
+I wrote the protocol implementation myself to develop a full understanding of reliable transport over UDP, beginning with stop-and-wait and progressing to Go-Back-N. During development, I used AI as a tutor and reviewer. It was used to ask
+conceptual questions, challenge design decisions, and receive feedback on my work. AI also assisted with organizing and editing the project documentation. I remained responsible for implementing, testing, debugging, and
+understanding the code.
+
+## Scope and limitations
+
+RUDP Lab is an educational implementation rather than a production transport
+protocol. Its scope is intentionally smaller than TCP and other established
+reliable transports:
+
+- The sender uses a fixed retransmission timeout rather than estimating an
+  adaptive timeout from network conditions.
+- There is no congestion control, receiver flow control, or dynamic window
+  sizing.
+- The receiver discards out-of-order packets, and the protocol does not support
+  selective acknowledgments or selective retransmission.
+- Sequence-number wraparound is not handled, which limits the maximum transfer
+  size supported by the 16-bit sequence field.
+- The protocol has no connection handshake, authentication, encryption, or
+  protection against malicious traffic.
+- The additive checksum is intended to demonstrate corruption detection, not
+  provide strong data-integrity guarantees.
+- The receiver handles one transfer at a time, and the CLI transfers generated
+  payloads rather than arbitrary input files.
+- The network simulator models independent packet loss but not latency,
+  corruption, duplication, bandwidth limits, or reordering.
+
+## Future improvements
+
+- Calculate an adaptive retransmission timeout using measured RTT and RTT
+  variation.
+- Implement Selective Repeat with receiver-side buffering to compare its
+  behavior with Go-Back-N under packet loss.
+- Extend the network simulator with delay, corruption, duplication, and
+  reordering controls.
+- Add file input and configurable output paths to make the CLI useful for
+  arbitrary file transfers.
+- Automate benchmark execution and generate charts from the collected results.
+- Write an RFC-style protocol specification covering the wire format, sender
+  and receiver state, acknowledgment semantics, and termination behavior.
