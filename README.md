@@ -6,6 +6,21 @@ cumulative acknowledgments, checksums, timeout-based retransmission, and
 simulated packet loss. Setting the window size to 1 provides stop-and-wait
 behavior for comparison.
 
+## Table of contents
+
+- [Project goals](#project-goals)
+- [Highlights](#highlights)
+- [How it works](#how-it-works)
+- [Loss simulation](#loss-simulation)
+- [Project structure](#project-structure)
+- [Getting started](#getting-started)
+- [Testing](#testing)
+- [Design decisions and tradeoffs](#design-decisions-and-tradeoffs)
+- [Benchmarks](#benchmarks)
+- [AI usage](#ai-usage)
+- [Scope and limitations](#scope-and-limitations)
+- [Future improvements](#future-improvements)
+
 ## Project goals
 
 I built RUDP Lab to better understand how reliable transport protocols provide ordered and dependable data delivery over an unreliable network. By implementing reliability on top of UDP, I was able to explore sequence numbers,
