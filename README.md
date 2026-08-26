@@ -1,7 +1,7 @@
 # RUDP Lab
 
 RUDP Lab is a learning-focused implementation of reliable transport over UDP.
-The current protocol uses a Go-Back-N sliding window with sequence numbers,
+The protocol uses a Go-Back-N sliding window with sequence numbers,
 cumulative acknowledgments, checksums, timeout-based retransmission, and
 simulated packet loss. Setting the window size to 1 provides stop-and-wait
 behavior for comparison.
